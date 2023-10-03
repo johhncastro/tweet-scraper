@@ -15,8 +15,8 @@ import time
 chrome_options = Options()
 chrome_options.add_argument("--headless")
 chrome_options.add_argument('window-size=1920x1080')
-chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36")
-
+chrome_options.add_argument(
+    "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36")
 
 user = input('enter twitter username: @')
 
@@ -61,6 +61,7 @@ user_btn = WebDriverWait(driver, 5).until(ec.presence_of_element_located((By.XPA
 user_btn.click()
 print('profile loaded.....')
 
+print('initializing scrape...')
 def get_tweet(element):
     try:
         x_name = element.find_element(By.XPATH, './/span[contains(text(), "@")]').text
@@ -73,29 +74,46 @@ def get_tweet(element):
 
 user_data = []
 text_data = []
-
-# Define the number of times you want to scroll (adjust as needed)
-scroll_count = 10
-
-for _ in range(scroll_count):
-    # Scroll to the bottom of the page
-    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-
-    # Wait briefly for new content to load (you can adjust the sleep time)
-    time.sleep(2)
-
-# scraper
-tweets = WebDriverWait(driver, 10).until(ec.presence_of_all_elements_located((By.XPATH, "//article[@role='article']")))
-if len(tweets) == 0:
-    print("No tweets found.")
-else:
-    for tweet in tweets:
+tweet_ids = set()
+scrolling = True
+while scrolling:
+    tweets = WebDriverWait(driver, 5).until(
+        ec.presence_of_all_elements_located((By.XPATH, "//article[@role='article']")))
+    print(len(tweets))
+    for tweet in tweets[-15:]:
         tweet_list = get_tweet(tweet)
-        user_data.append(tweet_list[0])
-        text_data.append(" ".join(tweet_list[1].split()))
+        tweet_id = ''.join(tweet_list)
+        if tweet_id not in tweet_ids:
+            tweet_ids.add(tweet_id)
+            user_data.append(tweet_list[0])
+            text_data.append(" ".join(tweet_list[1].split()))
+
+    # get the initial scroll height
+    last_height = driver.execute_script("return document.body.scrollHeight")
+    while True:
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(2)
+        new_height = driver.execute_script("return document.body.scrollHeight")
+        if new_height == last_height:
+            scrolling = False
+            break
+        else:
+            last_height = new_height
+            break
 
 driver.quit()
-print('scrape success......')
-df_tweets = pd.DataFrame({'user': user_data, 'tweet': text_data})
-df_tweets.to_csv(user + '_tweets.csv', index=False)
-print(df_tweets)
+print('scrape complete')
+data_type = input('Export data to CSV or JSON? (csv/json): ')
+
+if data_type.lower() == 'csv':
+    # export to CSV
+    df_tweets = pd.DataFrame({'user': user_data, 'text': text_data})
+    df_tweets.to_csv(user + '.csv', index=False)
+    print('Data exported to CSV:', user + '.csv')
+elif data_type.lower() == 'json':
+    # export to JSON
+    df_json = pd.DataFrame({'user':user_data, 'text': text_data})
+    df_json.to_json(user + '.json', index=False)
+    print('Data exported to JSON:', user + '.json')
+else:
+    print('Invalid export format. Please enter "csv" or "json".')
